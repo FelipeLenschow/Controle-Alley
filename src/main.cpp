@@ -14,7 +14,9 @@
 unsigned long Ch_time[5];
 unsigned long A_time;
 int value[6];
-bool send = 0;
+bool Send = 0;
+byte FreioCntD, FreioCntE;
+
 // uint8_t broadcastAddress[][6] = {0xCC, 0x50, 0xE3, 0x56, 0xAD, 0xF4}; // Alley
 // uint8_t broadcastAddress[][6] = {};
 uint8_t broadcastAddress[][6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // Broadcast
@@ -47,9 +49,13 @@ typedef struct struct_message
   int arma_vel;
   /// Primeiro indice é o led, o segundo são os valores de RGB (0-255 cada)
   byte led[2][3];
+  /// 1 para ativo 0 caso contrario
+  bool FreioE;
+  bool FreioD;
 } struct_message;
 
 struct_message Controle;
+struct_message LastControle;
 
 void IRAM_ATTR CH0();
 void IRAM_ATTR CH1();
@@ -155,6 +161,7 @@ void ConverterMotores(signed int X, signed int Y)
     }
 
     float Module = sqrt(X * X + Y * Y);
+    float Vel = Module * Module / 255;
     signed int Max_Y = 0;
     signed int Max_X = 0;
 
@@ -169,8 +176,8 @@ void ConverterMotores(signed int X, signed int Y)
       Max_X = 255 / tan(Angle);
     }
 
-    int Max_Module = sqrt(Max_X * Max_X + Max_Y * Max_Y);
-    int vel = constrain(255 * Module / Max_Module, 0, 255);
+    int Max_Vel = sqrt(Max_X * Max_X + Max_Y * Max_Y);
+    int vel = constrain(255 * Vel / Max_Vel, 0, 255);
 
     Save2send(Angle, vel);
   }
@@ -178,13 +185,13 @@ void ConverterMotores(signed int X, signed int Y)
 /// DeadZone e Limite de velocidade
 void LimitarMotores()
 {
-  if (abs(Controle.motor_d) > 60)
-    Controle.motor_d = map(Controle.motor_d, 0, 255, 0, 200);
+  if (abs(Controle.motor_d) > 0)
+    Controle.motor_d = map(Controle.motor_d, 0, 255, 60, 200);
   else
     Controle.motor_d = 0;
 
-  if (abs(Controle.motor_e) > 60)
-    Controle.motor_e = map(Controle.motor_e, 0, 255, 0, 200);
+  if (abs(Controle.motor_e) > 0)
+    Controle.motor_e = map(Controle.motor_e, 0, 255, 60, 200);
   else
     Controle.motor_e = 0;
 }
@@ -209,6 +216,37 @@ void ConstrainArma()
   else
     Controle.arma_vel = constrain(map(value[0], 255, 0, 1500, 1250), 1250, 1500);
 }
+/// Identifica entrada na DeadZone para freiar brevemente
+void Freio()
+{
+  if (!Controle.motor_d)
+  {                                                 // É pra parar?
+    if (FreioCntD)                                  // Ja começou a freiar?
+      if (FreioCntD <= 10)                          // É pra continuar freiando?
+        FreioCntD++;                                // Freia e aumenta a contagem
+      else                                          //
+        FreioCntD = 0;                              // Para e freiar
+    else if (LastControle.motor_d)                  // Ainda nao começou a freiar, mas deve?
+      FreioCntD = 1;                                // Freia e começa a contagem
+  }                                                 //
+  else                                              //
+    FreioCntD = 0;                                  // Entao é pra continuar andando
+  Controle.FreioD = (FreioCntD > 0 ? true : false); // Aplica o freio
+
+  if (!Controle.motor_e)
+  {
+    if (FreioCntE)
+      if (FreioCntE <= 10)
+        FreioCntE++;
+      else
+        FreioCntE = 0;
+    else if (LastControle.motor_e)
+      FreioCntE = 1;
+  }
+  else
+    FreioCntE = 0;
+  Controle.FreioE = (FreioCntE > 0 ? true : false);
+}
 
 void setup()
 {
@@ -231,26 +269,32 @@ void setup()
 
 void loop()
 {
-  if (send)
+  if (Send)
   {
-    delay(5);
+    delay(2);
+    LastControle = Controle;
     CalibrateValues();
-    ConverterMotores(value[2], -value[1]);
+    ConverterMotores(value[0], value[1]);
     LimitarMotores();
+    Freio();
     ConstrainArma();
     PoliceEffectLed();
 
-    send = 0;
     esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
-    delay(1);
     esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
-    delay(1);
     esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
-    delay(1);
+    esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
+    esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
+
+    Send = 0;
 
     Serial.print(Controle.motor_e);
     Serial.print("  ");
     Serial.print(Controle.motor_d);
+    Serial.print("  ");
+    Serial.print(Controle.FreioD);
+    Serial.print("  ");
+    Serial.print(Controle.FreioE);
     Serial.print("  ");
     Serial.println(Controle.arma_vel);
   }
