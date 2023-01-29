@@ -70,7 +70,7 @@ void CH0()
   if (digitalRead(12))
   {
     Ch_time[0] = time;
-    send = 1;
+    Send = 1;
   }
   else if (Ch_time[0] < time)
     value[0] = map(constrain(time - Ch_time[0], 1000, 2000), 1000, 2000, 0, 255);
@@ -147,51 +147,43 @@ void Save2send(float Angle, int vel)
 /// Converter valores para direção do motor
 void ConverterMotores(signed int X, signed int Y)
 {
-
-  if (X != 0)
+  X = X == 0 ? 1 : X;
+  float Angle = atan((float)Y / (float)X);
+  if (X < 0)
   {
-    double YdX = 1000 * Y / X;
-    float Angle = atan(YdX / 1000);
-    if (X < 0)
-    {
-      if (Y > 0)
-        Angle += PI;
-      else
-        Angle -= PI;
-    }
-
-    float Module = sqrt(X * X + Y * Y);
-    float Vel = Module * Module / 255;
-    signed int Max_Y = 0;
-    signed int Max_X = 0;
-
-    if (abs(X) > abs(Y))
-    {
-      Max_X = 255;
-      Max_Y = 255 * tan(Angle);
-    }
+    if (Y > 0)
+      Angle += PI;
     else
-    {
-      Max_Y = 255;
-      Max_X = 255 / tan(Angle);
-    }
-
-    int Max_Vel = sqrt(Max_X * Max_X + Max_Y * Max_Y);
-    int vel = constrain(255 * Vel / Max_Vel, 0, 255);
-
-    Save2send(Angle, vel);
+      Angle -= PI;
   }
+
+  float Module = sqrt(X * X + Y * Y);
+
+  float Vel = Module * Module / 255;
+  int Max_Vel = (abs(X) > abs(Y)) ? 255 / abs(cos(Angle)) : 255 / abs(sin(Angle));
+  int vel = constrain(255 * Vel / Max_Vel, 0, 255);
+  Save2send(Angle, vel);
 }
 /// DeadZone e Limite de velocidade
 void LimitarMotores()
 {
-  if (abs(Controle.motor_d) > 0)
-    Controle.motor_d = map(Controle.motor_d, 0, 255, 60, 200);
+  if (abs(Controle.motor_d) > 10)
+  {
+    if (Controle.motor_d > 0)
+      Controle.motor_d = map(Controle.motor_d, 0, 255, 40, 255);
+    else
+      Controle.motor_d = map(Controle.motor_d, 0, -255, -40, -255);
+  }
   else
     Controle.motor_d = 0;
 
-  if (abs(Controle.motor_e) > 0)
-    Controle.motor_e = map(Controle.motor_e, 0, 255, 60, 200);
+  if (abs(Controle.motor_e) > 10)
+  {
+    if (Controle.motor_e > 0)
+      Controle.motor_e = map(Controle.motor_e, 0, 255, 40, 255);
+    else
+      Controle.motor_e = map(Controle.motor_e, 0, -255, -40, -255);
+  }
   else
     Controle.motor_e = 0;
 }
@@ -212,9 +204,9 @@ void PoliceEffectLed()
 void ConstrainArma()
 {
   if (value[4])
-    Controle.arma_vel = constrain(map(value[0], 255, 0, 1500, 1750), 1500, 1750);
+    Controle.arma_vel = constrain(map(value[0], 255, 0, 1500, 2000), 1500, 2000);
   else
-    Controle.arma_vel = constrain(map(value[0], 255, 0, 1500, 1250), 1250, 1500);
+    Controle.arma_vel = constrain(map(value[0], 255, 0, 1500, 1000), 1000, 1500);
 }
 /// Identifica entrada na DeadZone para freiar brevemente
 void Freio()
@@ -222,7 +214,7 @@ void Freio()
   if (!Controle.motor_d)
   {                                                 // É pra parar?
     if (FreioCntD)                                  // Ja começou a freiar?
-      if (FreioCntD <= 10)                          // É pra continuar freiando?
+      if (FreioCntD <= 25)                          // É pra continuar freiando?
         FreioCntD++;                                // Freia e aumenta a contagem
       else                                          //
         FreioCntD = 0;                              // Para e freiar
@@ -274,12 +266,17 @@ void loop()
     delay(2);
     LastControle = Controle;
     CalibrateValues();
-    ConverterMotores(value[0], value[1]);
+    ConverterMotores(value[2], -value[1]);
     LimitarMotores();
     Freio();
     ConstrainArma();
     PoliceEffectLed();
 
+    esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
+    esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
+    esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
+    esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
+    esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
     esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
     esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
     esp_now_send(broadcastAddress[0], (uint8_t *)&Controle, sizeof(Controle));
